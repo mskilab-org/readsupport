@@ -1,5 +1,5 @@
 [![Build Status](https://travis-ci.org/mskilab/readsupport.svg?branch=master)](https://travis-ci.org/mskilab/readsupport)
-[![Documentation Status](https://readthedocs.org/projects/gutils/badge/?version=latest)](https://readthedocs.org/projects/readsupport/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/readsupport/badge/?version=latest)](https://readthedocs.org/projects/readsupport/?badge=latest)
 [![codecov.io](https://img.shields.io/codecov/c/github/mskilab/readsupport.svg)](https://codecov.io/github/mskilab/readsupport?branch=master)
 
 readsupport
