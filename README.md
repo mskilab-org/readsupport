@@ -1,6 +1,6 @@
-[![Build Status](https://travis-ci.org/mskilab/gUtils.svg?branch=master)](https://travis-ci.org/mskilab/readsupport)
+[![Build Status](https://travis-ci.org/mskilab/readsupport.svg?branch=master)](https://travis-ci.org/mskilab/readsupport)
 [![Documentation Status](https://readthedocs.org/projects/gutils/badge/?version=latest)](https://readthedocs.org/projects/readsupport/?badge=latest)
-[![codecov.io](https://img.shields.io/codecov/c/github/mskilab/gUtils.svg)](https://codecov.io/github/mskilab/readsupport?branch=master)
+[![codecov.io](https://img.shields.io/codecov/c/github/mskilab/readsupport.svg)](https://codecov.io/github/mskilab/readsupport?branch=master)
 
 readsupport
 =======
@@ -12,7 +12,7 @@ Set of utility functions for use with `GenomicRanges`
 Installation
 ------------
 
-1. Install R-4
+1. Install R-4.0 or later
 
 2. Install devtools
 
@@ -20,7 +20,7 @@ Installation
 install.packages('devtools')
 install.packages('testthat')
 ```
-3. Install gUtils and dependent packages
+3. Install readsupport and dependent packages
 
 ```{r}
 ## allows dependencies that throw warnings to install
