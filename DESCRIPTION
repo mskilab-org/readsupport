@@ -1,0 +1,31 @@
+Package: readsupport
+Title: R package providing ability to assess read support for structural variants. 
+Version: 0.0.0
+Authors@R: c(
+    person("Zi-Ning", "Choo", role = c("aut", "cre"),  email = "zchoo@nygenome.org"),
+    person("Marcin", "Imielinski", role = c("aut", "cre"), email =
+    "mimielinski@nygenome.org"))
+Description: The readsupport enables the evaluation of read support for junctions and rearranged contigs of arbitrary complexity and is useful forvetting, genotyping, and co-calling structural variants.
+Remotes: 
+  github::mskilab/gUtils,
+  github::mskilab/gChain,
+  github::mskilab/gGnome,
+  github::mskilab/RSeqLib 
+Depends:
+    R (>= 3.6.0),
+    data.table (>= 1.11),
+    gTrack,
+    gUtils,
+    gChain,
+    RSeqLib, 
+    Biostrings,
+    GenomicRanges,
+Imports:
+    methods,
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.1.2
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

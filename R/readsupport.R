@@ -1,6 +1,157 @@
 #' @import gChain
 #' @import gUtils
 
+#' @name junction.support
+#' @title junction.support
+#' @description
+#'
+#' Takes as input a GRanges of bam alignments (e.g. outputted from bamUtils::read.bam) and a GRanges of rearranged
+#' reference aligned contigs (e.g. output of RSeqLib::BWA) and a set of Junction objects, and outputs reads supporting
+#' these junctions by building a contig around each junction (from the reference) and then running contig.support (see
+#' that functions docuemntation for criteria)
+#'
+#' @param reads GRanges in SAM / BAM format e.g. output of read.bam or BWA, with fields $qname, $cigar, $flag $seq all populated in standard fashion, and optionally $AS
+#' @param junctions Junction object
+#' @param bwa RSeqLib BWA object and path to fasta file corresponding to the reference
+#' @param ref optional DNAStringSet corresponding to reference genome sequence
+#' @param pad padding around the junction breakpoint around  which to analyze contig and reference sequences, this should be several standard deviations above the average insert size (2000)
+#' @param realign flag whether to realign or just use existing alignments
+#' @param bx logical flag whether data is linked reads, must then have BX flag, and the pad will be set to minimum 1e5
+#' @param verbose logical flag (TRUE)
+#' @param ... additional parameters to contig support
+#' @return reads re-aligned to the reference through the contigs with additional metadata describing features of the alignment
+#' @export
+#' @author Marcin Imielinski
+junction.support = function(reads, junctions = NULL, bwa = NULL, ref = NULL, pad = 500, bx = FALSE, pad.ref = pad*20, both = TRUE, realign = TRUE, walks = NULL, verbose = TRUE, ...)
+{
+
+  if (!inherits(reads, 'GRanges') || is.null(reads$qname) || is.null(reads$cigar) || is.null(reads$seq) || is.null(reads$flag))
+    stop('read input must be GRanges with fields $qname, $cigar, $seq, $flag and optionally $AS')
+
+  if (bx)
+    pad = max(pad, 1e5)
+
+  if (!is.null(junctions))
+    walks = jJ(junctions$grl)$gw(pad = pad)
+
+  if (is.null(walks))
+    stop('Either walks or junctions must be provided')
+
+  if (bx)
+  {
+    if (is.null(reads$BX))
+      stop('reads must have BX tag, may need to read.bam with tag option to extract it')
+
+    if (!length(reads))
+      return(reads)
+
+    sc = score.walks(walks$grl, reads = reads, verbose = FALSE, raw = TRUE)$sc
+    res = as.data.table(melt(as.matrix(sc)))[value>0, .(BX = Var1, walk = Var2)]
+    reads = gr2dt(reads) %>% merge(res, by = 'BX') %>% dt2gr
+    return(reads)
+  }
+
+  if (!realign)
+  {
+    if (is.null(junctions))
+      junctions = walks$edges$junctions
+
+    ## strand flip since 
+    ## read orientation convention
+    ## is opposite to junction convention
+    reads = gr.flipstrand(reads) 
+    reads$R1 = bamUtils::bamflag(reads$flag)[,'isFirstMateRead']>0
+    r1 = reads %Q% (R1 == TRUE) %>% as.data.table
+    r2 = reads %Q% (R1 == FALSE) %>% as.data.table
+    ov = merge(r1, r2, by = 'qname')
+    if (!nrow(ov))
+      return(reads[c()])
+    
+    sl = seqlengths(reads)
+    grl = grl.pivot(
+      GRangesList(dt2gr(ov[, .(seqnames = seqnames.x, start = start.x, end =end.x, strand = strand.x)],
+                        seqlengths = sl),
+                  dt2gr(ov[, .(seqnames = seqnames.y, start = start.y, end = end.y, strand = strand.y)],
+                        seqlengths = sl)))
+    values(grl)$qname = ov$qname
+    ## make junctions out of reads and cross with "real" junctions
+    jn = gGnome::merge(jJ(grl), junctions, cartesian = TRUE, pad = pad)
+    if (!length(jn))
+      return(reads[c()])
+    out = merge(as.data.table(gr.flipstrand(reads)), unique(jn$dt[, .(qname, junction.id = subject.id)]), by = 'qname') %>% dt2gr(seqlengths = sl)
+    return(out)
+  }
+
+  if (is.null(bwa) & is.null(ref))
+    stop('BWA object or reference must be provided if realign = TRUE')
+
+  if (is.null(bwa) && !is.null(ref) && is.character(ref))
+    bwa = BWA(ref)
+
+  if (is.null(bwa))
+    stop('BWA object or reference must be provided if realign = TRUE')
+  
+  if (inherits(bwa, 'character') && file.exists(bwa))
+  {
+    if (verbose)
+      message('Loading BWA index')
+    bwa = BWA(bwa)
+  }
+
+  if (!inherits(ref, 'DNAStringSet'))
+  {
+    if (verbose)
+      message('Loading genome reference as DNAStringSet')
+
+    ref = rtracklayer::import(bwa@reference)
+  }
+
+  ## only >use the fasta header before the first space as the seqnames of ref 
+  names(ref) = strsplit(names(ref), '\\s+') %>% sapply('[', 1)
+
+  if (length(setdiff(seqnames(walks$nodes$gr), seqlevels(ref))))
+    stop('seqlevels mismatch between junctions / walks and reference, please check reference (e.g. chr issues)')
+
+  if (length(setdiff(seqnames(walks$nodes$gr), seqlevels(bwa))))
+    stop('seqlevels mismatch between junctions / walks and BWA reference, please check reference (e.g. chr issues)')
+
+  if (verbose)
+    message('Building and mapping derivative contigs')
+
+  contig = bwa[ref[gr.fix(walks$grl, ref, drop = TRUE)]]
+
+  if (verbose)
+    message('Building reference contigs flanking junctions')
+  contigref = ref[gr.fix(walks$edges$junctions$footprint + pad.ref, ref, drop = TRUE)]
+
+
+  if (verbose)
+    message('Making gChain mapping contigs to reference')
+  cg.contig = gChain::cgChain(contig)
+
+  if (verbose)
+    message('Running contig support')
+
+  reads = contig.support(reads, contig, ref = bwa, cg.contig = cg.contig, ...)
+  ##  reads = contig.support(reads, contig, ref = contigref, cg.contig = cg.contig, ...)
+  reads$junction.id = as.integer(as.character(reads$contig.id))
+
+  if (both)
+  {
+    if (length(reads))
+      reads$source = 'realignment'
+    
+    reads2 = junction.support(reads, junctions, bwa = bwa, ref = ref, pad = pad, realign = FALSE, both = FALSE, pad.ref = pad.ref, walks = walks, verbose = verbose, ...)
+
+    if (length(reads2))
+      reads2$source = 'original_alignment'
+
+    reads = grbind(reads, reads2)
+  }
+  return(reads)  
+}
+
+
 #' @name contig.support
 #' @title contig.support
 #' @description
@@ -357,5 +508,5 @@ contig.support = function(reads,
     if (verbose)
         message('Done')
 
-    out
+    return(out)
 }
