@@ -1,4 +1,5 @@
 #' @import gChain
+#' @import bamUtils
 #' @import gUtils
 
 #' @name junction.support
@@ -228,13 +229,14 @@ contig.support = function(reads,
     strand(chunks) = '+'
     chunks = disjoin(chunks)
     if (is.null(reads$R1))
-        reads$R1 = bamflag(reads$flag)[,'isFirstMateRead']>0
+        reads$R1 = bamUtils::bamflag(reads$flag)[,'isFirstMateRead']>0
     reads$read.id = 1:length(reads)
     if (is.null(reads$AS))
     {
         warning('AS not provided in reads, may want to consider using tag = "AS" argument to read.bam or provide a ref sequence to provide additional specificity to the contig support')
         reads$AS = 0
     }
+    reads = reads %Q% (!is.na(seq))##[!is.na(seq)]
     nix = as.logical(strand(reads) == '-' )
     reads$seq[nix] = reverseComplement(DNAStringSet(reads$seq[nix])) ## flip read sequences to original strand
     reads[!reads$R1] = gr.flipstrand(reads[!reads$R1]) ## flip R2 read orientation to R1 strand
@@ -281,7 +283,7 @@ contig.support = function(reads,
                              verbose = verbose)
             tmp = as.data.table(tmp)
         } else {
-            tmp = bwa.ref[reads$reading.frame] %>% gr2dt
+            tmp = bwa.ref[reads$seq] %>% gr2dt
             tmp$ix = as.numeric(as.character(tmp$qname))
             tmp$R1 = reads$R1[tmp$ix]
             tmp$qname = reads$qname[tmp$ix]
@@ -291,12 +293,12 @@ contig.support = function(reads,
         if (nrow(tmp))
         {
             ## what if not both read pairs are included?
-            tmp[, isize := ifelse(any(seqnames != seqnames[1] | any(strand != strand[1])), NA_integer_, diff(range(start, end))), by = qname]
+            tmp[, isize := ifelse(any(seqnames != seqnames[1] | any(strand != strand[1])), Inf, diff(range(start, end))), by = qname]
             ## isize should be NA if only one of the sides has a match
             unpaired.qnames = tmp[, .(count = .N), by = qname][count == 1, qname]
             tmp[qname %in% unpaired.qnames, isize := NA_integer_]
             ## the final isize should only account for the isize from the provided refseq
-            reads$isize = pmin(tmp[.(reads$qname, reads$R1), isize], Inf, na.rm = TRUE)
+            reads$isize = tmp[.(reads$qname, reads$R1), isize]## pmin(tmp[.(reads$qname, reads$R1), isize], Inf, na.rm = TRUE)
             ## next line is the original version
             ## reads$isize = pmin(tmp[.(reads$qname, reads$R1), isize], reads$isize, Inf, na.rm = TRUE)
             ## reads[, c("isize", "isize.new", "isize.pmin", "sample")] %Q% (sample == "A0K8N")
@@ -316,7 +318,7 @@ contig.support = function(reads,
     ## use new cigar?
     rdt[, ref.aligned := countCigar(ref.aligned.cigar)[, 'M']] 
     rdt[, ref.aligned := countCigar(cigar)[, 'M']] ## this is not the cigar from the realignment?
-    rdt[, ref.aligned.frac := ref.aligned/qwidth[1], by = .(qname, R1)] 
+    rdt[, ref.aligned.frac := ref.aligned/qwidth[1], by = .(qname, R1)]
 
     reads$ref.aligned.frac = rdt$ref.aligned.frac
 
@@ -329,7 +331,7 @@ contig.support = function(reads,
                             verbose = verbose)
         readsc = as.data.table(readsc)
     } else {
-        readsc = bwa.contig[reads$reading.frame] %>% gr2dt
+        readsc = bwa.contig[reads$seq] %>% gr2dt
         readsc$ix = as.integer(as.character(readsc$qname))
         readsc$R1 = reads$R1[readsc$ix]
         
@@ -345,7 +347,7 @@ contig.support = function(reads,
     
 
     ## these are splits on the contig, not reference --> shouldn't be any for good alignment
-    readsc[, nsplit := .N, by = .(qname, R1)] 
+    ## readsc[, nsplit := .N, by = .(qname, R1)] 
     readsc[, aligned := countCigar(cigar)[, 'M']]
 
     ## these are splits on the contig, not reference --> shouldn't be any for good alignment
@@ -358,11 +360,13 @@ contig.support = function(reads,
     readsc$strand.og = strand(reads)[readsc$ix] %>% as.character
     readsc$start.og = start(reads)[readsc$ix]
     readsc$end.og = end(reads)[readsc$ix]
-    readsc$ref.isize = gr2dt(readsc)[, ref.isize := ifelse(
-                                           all(seqnames.og == seqnames.og[1]) & all(strand.og == strand.og[1]),
-                                           as.numeric(diff(range(c(start.og, end.og)))),                                   
-                                           Inf), by = qname]$ref.isize %>% abs
-
+    readsc$ref.isize = reads$isize[readsc$ix]
+    ## readsc$ref.isize = gr2dt(readsc)[, ref.isize := ifelse(
+    ##                                        both &
+    ##                                        all(seqnames.og == seqnames.og[1]) &
+    ##                                        all(strand.og == strand.og[1]),
+    ##                                        as.numeric(diff(range(c(start.og, end.og)))),                                   
+    ##                                        Inf), by = qname]$ref.isize %>% abs
     readsc$ref.aligned.frac = reads$ref.aligned.frac[readsc$ix]
     readsc$AS.og[is.na(readsc$AS.og)] = 0
     readsc$qname = reads$qname[readsc$ix]
@@ -394,7 +398,8 @@ contig.support = function(reads,
         ## ie this is the lowest coordinate on the query
         ## (note that cgChain will split indels into separate ranges hence giving one to many mapping of al.id
         ## to records in links)
-        setkeyv(alchunks, c('qname', 'start', 'end'))
+        ## setkeyv(alchunks, c('qname', 'start', 'end'))
+        setkeyv(alchunks, c('contig', 'contig.start', 'contig.end'))
         ## alchunks[, is.min := start == min(start), by = al.id]
         ## alchunks = alchunks[is.min == TRUE, ]
 
@@ -422,26 +427,36 @@ contig.support = function(reads,
         alchunks[, concordant.R1R2 := ifelse(both,(contig.sign*sign((contig.start[R1][1]<contig.start[!R1][1]) - 0.5))>0, TRUE), by = qname]
         alchunks[, concordant.start := all((contig.sign[1]*diff(start))>0), by = .(qname, R1)]
 
-        alchunks[, contig.isize := diff(range(contig.start, contig.end)), by = qname]
-        alchunks[, bases := sum(width), by = qname]
+        ## alchunks[, contig.isize := ifelse(both,diff(range(contig.start, contig.end)), 0), by = qname]
+        alchunks[, contig.isize := ifelse(all(contig == contig[1]) &
+                                          all(contig.strand == contig.strand[1]),
+                                          abs(as.numeric(diff(range(c(contig.start, contig.end))))),
+                                          Inf), by = qname]
+        alchunks[(!both), contig.isize := NA_integer_]
+        alchunks[, bases := sum(width), by = .(qname)]
 
         ## nonzero width of chunks with better alignment scores relative to REF
         ## should this also be by read? (e.g. qname, R1)
-        alchunks[, AS.better := sum(width[AS>AS.og]), by = .(qname, R1)]
-        alchunks[, AS.worse := sum(width[AS<AS.og]), by = .(qname, R1)]
-        alchunks[, AS.equal := sum(width[AS==AS.og]), by = .(qname, R1)]
+        alchunks[, AS.better := sum(width[AS>AS.og]), by = .(qname)]
+        ## keep qname if a single read is truncated
+        alchunks[, AS.worse := sum(width[AS<AS.og]), by = .(qname)] 
+        alchunks[, AS.equal := sum(width[AS==AS.og]), by = .(qname)]
+        alchunks[, nsplit := .N, by = .(qname, R1)]
 
         keepq = alchunks[concordant.sign & concordant.R1R2 & concordant.start &
                          bases > min.bases & aligned.frac > min.aligned.frac &
                          aligned.frac >= ref.aligned.frac &
                          nsplit  == 1 & ## no split reads
-                         contig.isize - ref.isize < isize.diff & ## reimplementation of isize.diff
-                         (AS.better>0 | contig.isize<ref.isize) & ## use isize to prevent removing fb's
+                         ((contig.isize - ref.isize < isize.diff) |
+                          (is.infinite(ref.isize) & !is.infinite(contig.isize)) |
+                          (is.na(ref.isize) & !is.infinite(contig.isize))) & 
+                         (AS.better>0 | (((ref.isize > 1e3 & ref.isize > contig.isize) | is.infinite(ref.isize) | is.na(ref.isize)) & (!is.infinite(contig.isize) & !is.na(contig.isize)))) & 
                          AS.worse == 0, ] ## all bases non-inferior alignment to original
 
-        ## keep read-specific information... 
-        keepq = keepq[, .(qname, R1, contig, contig.isize, contig.strand, bases,
-                          contig.sign, AS.better, AS.worse, AS.equal)] %>% unique(by = c('qname', 'R1'))
+        ## keep read-specific information...
+        keepq = keepq[, .(qname, contig, contig.id = as.character(contig), contig.isize, contig.strand, bases, contig.sign, AS.better, AS.worse, AS.equal)] %>% unique(by = 'qname')
+        ## keepq = keepq[, .(qname, R1, contig, contig.isize, contig.strand, bases,
+        ##                   contig.sign, AS.better, AS.worse, AS.equal)] ## %>% unique(by = c('qname', 'R1'))
     }
     else ## old scoring method
     {
@@ -486,8 +501,8 @@ contig.support = function(reads,
     }
 
     ## R1/R2-speicific information is lost here
-    ##readsc = merge(readsc, keepq, by = 'qname') %>% dt2gr
-    readsc = merge(readsc, keepq, by = c('qname', 'R1')) %>% dt2gr
+    readsc = merge(readsc, keepq, by = 'qname') %>% dt2gr
+    ## readsc = merge(readsc, keepq, by = c('qname', 'R1')) %>% dt2gr
     
     if (verbose)
         message('Lifting reads through contig back to reference')
