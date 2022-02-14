@@ -2,3 +2,6 @@
 
 export(contig.support)
 export(junction.support)
+import(bamUtils)
+import(gChain)
+import(gUtils)
