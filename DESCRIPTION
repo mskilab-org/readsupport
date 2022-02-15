@@ -23,6 +23,7 @@ Depends:
     gTrack,
     gUtils,
     gChain,
+    gGnome,
     RSeqLib, 
     Biostrings,
     GenomicRanges,
