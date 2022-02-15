@@ -66,7 +66,7 @@ junction.support = function(reads, junctions = NULL, bwa = NULL, ref = NULL, pad
     reads$R1 = bamUtils::bamflag(reads$flag)[,'isFirstMateRead']>0
     r1 = reads %Q% (R1 == TRUE) %>% as.data.table
     r2 = reads %Q% (R1 == FALSE) %>% as.data.table
-    ov = merge(r1, r2, by = 'qname')
+    ov = merge.data.table(r1, r2, by = 'qname')
     if (!nrow(ov))
       return(reads[c()])
     
