@@ -1,6 +1,8 @@
-#' @import gChain
 #' @import bamUtils
+#' @import gChain
 #' @import gUtils
+#' @import gGnome
+#' @import RSeqLib
 
 #' @name junction.support
 #' @title junction.support
@@ -33,7 +35,7 @@ junction.support = function(reads, junctions = NULL, bwa = NULL, ref = NULL, pad
     pad = max(pad, 1e5)
 
   if (!is.null(junctions))
-    walks = jJ(junctions$grl)$gw(pad = pad)
+    walks = gGnome::jJ(junctions$grl)$gw(pad = pad)
 
   if (is.null(walks))
     stop('Either walks or junctions must be provided')
@@ -241,7 +243,9 @@ contig.support = function(reads,
     reads$seq[nix] = reverseComplement(DNAStringSet(reads$seq[nix])) ## flip read sequences to original strand
     reads[!reads$R1] = gr.flipstrand(reads[!reads$R1]) ## flip R2 read orientation to R1 strand
     reads$seq[!reads$R1] = reverseComplement(DNAStringSet(reads$seq[!reads$R1])) ## flip R2 read sequences to R1 strand
-    reads = reads %Q% (!duplicated(paste(qname, R1)))
+    ## remove non-primary alignments?
+    ##reads = reads %Q% (bamUtils::bamflag(reads$flag)[,'isNotPrimaryRead']==0)
+    reads = reads %Q% (!duplicated(paste(qname, R1))) ## this will remove split reads??
 
     if (!is.null(ref)) ## realign reads against reference DNAStringSet if provided to get alignment scores
     {
@@ -425,6 +429,7 @@ contig.support = function(reads,
         ## new code from marcin to make concordant.R1R2 and concordant.start robust to small inserts
         alchunks[, both := any(R1) & any(!R1), by = qname]
         alchunks[, concordant.R1R2 := ifelse(both,(contig.sign*sign((contig.start[R1][1]<contig.start[!R1][1]) - 0.5))>0, TRUE), by = qname]
+        ##alchunks[, concordant.start := all((contig.sign[1]*diff(start))>0), by = .(qname, R1)]
         alchunks[, concordant.start := all((contig.sign[1]*diff(start))>0), by = .(qname, R1)]
 
         ## alchunks[, contig.isize := ifelse(both,diff(range(contig.start, contig.end)), 0), by = qname]
@@ -451,7 +456,7 @@ contig.support = function(reads,
                           (is.infinite(ref.isize) & !is.infinite(contig.isize)) |
                           (is.na(ref.isize) & !is.infinite(contig.isize))) & 
                          (AS.better>0 | (((ref.isize > 1e3 & ref.isize > contig.isize) | is.infinite(ref.isize) | is.na(ref.isize)) & (!is.infinite(contig.isize) & !is.na(contig.isize)))) & 
-                         AS.worse == 0, ] ## all bases non-inferior alignment to original
+                         AS.worse == 0, ]
 
         ## keep read-specific information...
         keepq = keepq[, .(qname, contig, contig.id = as.character(contig), contig.isize, contig.strand, bases, contig.sign, AS.better, AS.worse, AS.equal)] %>% unique(by = 'qname')

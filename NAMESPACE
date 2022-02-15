@@ -2,6 +2,8 @@
 
 export(contig.support)
 export(junction.support)
+import(RSeqLib)
 import(bamUtils)
 import(gChain)
+import(gGnome)
 import(gUtils)
