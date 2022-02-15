@@ -24,9 +24,12 @@ Depends:
     gUtils,
     gChain,
     gGnome,
-    RSeqLib, 
     Biostrings,
     GenomicRanges,
+    igraph,
+    Matrix,
+    RSeqLib, 
+    reshape2,
 Imports:
     methods,
 License: GPL-3
