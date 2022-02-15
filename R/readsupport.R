@@ -1,8 +1,17 @@
+#' @import Biostrings
+#' @import GenomicRanges
+#' @import Matrix
+#' @import data.table
+#' @import gTrack
+#' @import igraph
+#' @import reshape2
 #' @import bamUtils
 #' @import gChain
 #' @import gUtils
 #' @import gGnome
 #' @import RSeqLib
+#' @import rtracklayer
+#' @importFrom stats start end
 
 #' @name junction.support
 #' @title junction.support
@@ -20,12 +29,25 @@
 #' @param pad padding around the junction breakpoint around  which to analyze contig and reference sequences, this should be several standard deviations above the average insert size (2000)
 #' @param realign flag whether to realign or just use existing alignments
 #' @param bx logical flag whether data is linked reads, must then have BX flag, and the pad will be set to minimum 1e5
+#' @param pad.ref (numeric) pad around breakend for grabbing reference sequence, default pad * 20
+#' @param both (logical) perform both realignment and non-realignment-based support? (default TRUE)
+#' @param walks (gWalk) walks corresponding to junction (default NULL)
 #' @param verbose logical flag (TRUE)
 #' @param ... additional parameters to contig support
 #' @return reads re-aligned to the reference through the contigs with additional metadata describing features of the alignment
 #' @export
 #' @author Marcin Imielinski
-junction.support = function(reads, junctions = NULL, bwa = NULL, ref = NULL, pad = 500, bx = FALSE, pad.ref = pad*20, both = TRUE, realign = TRUE, walks = NULL, verbose = TRUE, ...)
+junction.support = function(reads,
+                            junctions = NULL,
+                            bwa = NULL,
+                            ref = NULL,
+                            pad = 500,
+                            bx = FALSE,
+                            pad.ref = pad*20,
+                            both = TRUE,
+                            realign = TRUE,
+                            walks = NULL,
+                            verbose = TRUE, ...)
 {
 
   if (!inherits(reads, 'GRanges') || is.null(reads$qname) || is.null(reads$cigar) || is.null(reads$seq) || is.null(reads$flag))
@@ -191,13 +213,15 @@ junction.support = function(reads, junctions = NULL, bwa = NULL, ref = NULL, pad
 #' @param contig GRanges in SAM / BAM format wth fields $qname, $cigar and $seq all [populated
 #' @param ref optional DNAStringSet representing a reference sequence to compute alignments against
 #' @param chimeric logical flag whether to require reads to support junctions in chimericcontigs (ie discontiguous chunks on the reference), chimeric = FALSE
-#' @param strict strict requires that the alignment score of the read to contig alignment needs to be better for at least one read (and also not worse for any of the reads) 
+#' @param strict strict requires that the alignment score of the read to contig alignment needs to be better for at least one read (and also not worse for any of the reads)
+#' @param cg.contig (cgChain) gChain corresponing to contig (maps contig coordinates to ref coordinates)
 #' @param isize.diff (numeric) the insert size in the reference vs. the insert size in the contig between discordant read pairs
 #' @param min.bases (numeric) min aligned bases to be considered valid alignment, default 20
 #' @param min.aligned.frac (numeric) min fraction of bases in alignment that are matching, default 0.95
 #' @param new (logical) new scoring scheme, default TRUE
 #' @param bowtie (logical) use bowtie for read alignment? requires bowtie to be callable from command line, default FALSE (use BWA)
 #' @param outdir (logical) output directory for bowtie2 temporary files
+#' @param verbose (logical) print stuff (default TRUE)
 #' 
 #' @return reads re-aligned to the reference through the contigs with additional metadata describing features of the alignment
 #' @export

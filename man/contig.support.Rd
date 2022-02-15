@@ -31,6 +31,8 @@ contig.support(
 
 \item{strict}{strict requires that the alignment score of the read to contig alignment needs to be better for at least one read (and also not worse for any of the reads)}
 
+\item{cg.contig}{(cgChain) gChain corresponing to contig (maps contig coordinates to ref coordinates)}
+
 \item{isize.diff}{(numeric) the insert size in the reference vs. the insert size in the contig between discordant read pairs}
 
 \item{min.bases}{(numeric) min aligned bases to be considered valid alignment, default 20}
@@ -42,6 +44,8 @@ contig.support(
 \item{bowtie}{(logical) use bowtie for read alignment? requires bowtie to be callable from command line, default FALSE (use BWA)}
 
 \item{outdir}{(logical) output directory for bowtie2 temporary files}
+
+\item{verbose}{(logical) print stuff (default TRUE)}
 }
 \value{
 reads re-aligned to the reference through the contigs with additional metadata describing features of the alignment
