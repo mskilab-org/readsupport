@@ -4,14 +4,13 @@ library(testthat)
 library(Biostrings)
 library(RSeqLib)
 
-
-junction = jJ(parse.grl("1:1001-1001-,2:1001-1001-"))
-reads = readRDS(system.file('extdata', 'reads.rds', package="readsupport"))
-ref = readDNAStringSet(system.file('extdata', 'ref.fasta', package="readsupport"))
-bwa = BWA(seq = ref)
-
 test_that('junction.support', {
     suppressWarnings(expr = {
+        junction = jJ(parse.grl("1:1001-1001-,2:1001-1001-"))
+        reads = readRDS(system.file('extdata', 'reads.rds', package="readsupport"))
+        ref = readDNAStringSet(system.file('extdata', 'ref.fasta', package="readsupport"))
+        bwa = BWA(seq = as.character(ref))
+
         res.norealn = junction.support(reads, junction, realign = FALSE, pad.ref = 1e3)
         expect_equal(length(res.norealn), 51)
         expect_equal(length(unique(res.norealn$qname)), 18)
@@ -26,7 +25,7 @@ test_that('junction.support', {
 jj = gGnome::jJ(parse.grl("1:1001-1001+,2:1001-1001+"))
 
 dup.fasta.fn = system.file("extdata", "dup", "ref.fasta", package = "readsupport")
-dup.bwa = RSeqLib::BWA(seq = Biostrings::readDNAStringSet(dup.fasta.fn))
+dup.bwa = RSeqLib::BWA(seq = as.character(Biostrings::readDNAStringSet(dup.fasta.fn)))
 dup.rs = Biostrings::readDNAStringSet(dup.fasta.fn)
 dup.lifted.reads.gr = readRDS(system.file("extdata", "dup", "reads.rds", package = "readsupport"))
 
@@ -49,7 +48,7 @@ test_that(desc = "test junction support for a lifted duplication", code = {
 })
 
 tra.fasta.fn = system.file("extdata", "tra", "ref.fasta", package = "readsupport")
-tra.bwa = RSeqLib::BWA(seq = Biostrings::readDNAStringSet(tra.fasta.fn))
+tra.bwa = RSeqLib::BWA(seq = as.character(Biostrings::readDNAStringSet(tra.fasta.fn)))
 tra.rs = Biostrings::readDNAStringSet(tra.fasta.fn)
 tra.lifted.reads.gr = readRDS(system.file("extdata", "tra", "reads.rds", package = "readsupport"))
 
@@ -71,7 +70,7 @@ test_that(desc = "test junction support for a lifted translocation", code = {
 })
 
 inv.fasta.fn = system.file("extdata", "inv", "ref.fasta", package = "readsupport")
-inv.bwa = RSeqLib::BWA(seq = Biostrings::readDNAStringSet(inv.fasta.fn))
+inv.bwa = RSeqLib::BWA(seq = as.character(Biostrings::readDNAStringSet(inv.fasta.fn)))
 inv.rs = Biostrings::readDNAStringSet(inv.fasta.fn)
 inv.lifted.reads.gr = readRDS(system.file("extdata", "inv", "reads.rds", package = "readsupport"))
 
