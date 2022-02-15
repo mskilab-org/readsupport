@@ -143,7 +143,7 @@ junction.support = function(reads,
   if (verbose)
     message('Building and mapping derivative contigs')
 
-  contig = bwa[ref[gr.fix(walks$grl, ref, drop = TRUE)]]
+  contig = bwa[as.character(ref[gr.fix(walks$grl, ref, drop = TRUE)])]
 
   if (verbose)
     message('Building reference contigs flanking junctions')
