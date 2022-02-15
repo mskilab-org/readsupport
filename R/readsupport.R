@@ -280,7 +280,7 @@ contig.support = function(reads,
             if (verbose) {
                 message("building BWA from sequence")
             }
-            bwa.ref = RSeqLib::BWA(seq = ref)
+            bwa.ref = RSeqLib::BWA(seq = as.character(ref))
         } else if (inherits(ref, 'BWA')) {
             if (verbose) {
                 message("Using supplied BWA")
