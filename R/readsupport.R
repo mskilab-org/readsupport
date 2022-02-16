@@ -311,7 +311,10 @@ contig.support = function(reads,
                              verbose = verbose)
             tmp = as.data.table(tmp)
         } else {
-            tmp = bwa.ref[reads$seq] %>% gr2dt
+            qstring = reads$seq
+            names(qstring) = as.character(1:length(qstring))
+            ##tmp = bwa.ref[reads$seq] %>% gr2dt
+            tmp = bwa.ref[qstring] %>% gr2dt
             tmp$ix = as.numeric(as.character(tmp$qname))
             tmp$R1 = reads$R1[tmp$ix]
             tmp$qname = reads$qname[tmp$ix]
@@ -359,7 +362,10 @@ contig.support = function(reads,
                             verbose = verbose)
         readsc = as.data.table(readsc)
     } else {
-        readsc = bwa.contig[reads$seq] %>% gr2dt
+        qstring = reads$seq
+        names(qstring) = as.character(1:length(qstring))
+        ## readsc = bwa.contig[reads$seq] %>% gr2dt
+        readsc = bwa.contig[qstring] %>% gr2dt
         readsc$ix = as.integer(as.character(readsc$qname))
         readsc$R1 = reads$R1[readsc$ix]
         
