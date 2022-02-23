@@ -32,7 +32,13 @@ junction.support(
 
 \item{bx}{logical flag whether data is linked reads, must then have BX flag, and the pad will be set to minimum 1e5}
 
+\item{pad.ref}{(numeric) pad around breakend for grabbing reference sequence, default pad * 20}
+
+\item{both}{(logical) perform both realignment and non-realignment-based support? (default TRUE)}
+
 \item{realign}{flag whether to realign or just use existing alignments}
+
+\item{walks}{(gWalk) walks corresponding to junction (default NULL)}
 
 \item{verbose}{logical flag (TRUE)}
 
