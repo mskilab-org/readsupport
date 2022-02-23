@@ -1,4 +1,4 @@
-[![R-CMD-check](https://github.com/mskilab/readsupport/actions/workflows/check-release.yaml/badge.svg?branch=zc_dev)](https://github.com/mskilab/readsupport/actions/workflows/check-release.yaml)
+[![R-CMD-check](https://github.com/mskilab/readsupport/actions/workflows/check-release.yaml/badge.svg?branch=zc_dev)](https://github.com/mskilab/readsupport/actions/workflows/check-release.yaml)[![test-coverage](https://github.com/mskilab/readsupport/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/mskilab/readsupport/actions/workflows/test-coverage.yaml)
 
 readsupport
 =======
