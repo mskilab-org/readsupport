@@ -394,13 +394,15 @@ contig.support = function(reads,
     readsc$strand.og = strand(reads)[readsc$ix] %>% as.character
     readsc$start.og = start(reads)[readsc$ix]
     readsc$end.og = end(reads)[readsc$ix]
-    readsc$ref.isize = reads$isize[readsc$ix]
-    ## readsc$ref.isize = gr2dt(readsc)[, ref.isize := ifelse(
-    ##                                        both &
-    ##                                        all(seqnames.og == seqnames.og[1]) &
-    ##                                        all(strand.og == strand.og[1]),
-    ##                                        as.numeric(diff(range(c(start.og, end.og)))),                                   
-    ##                                        Inf), by = qname]$ref.isize %>% abs
+    ## readsc$ref.isize = reads$isize[readsc$ix]
+    readsc[, both := any(R1) & (!any(R1)), by = qname]
+    readsc$ref.isize = gr2dt(readsc)[, ref.isize := ifelse(
+                                           both &
+                                           all(seqnames.og == seqnames.og[1]) &
+                                           all(strand.og == strand.og[1]),
+                                           as.numeric(diff(range(c(start.og, end.og)))), Inf),
+                                     by = qname]$ref.isize %>% abs
+    
     readsc$ref.aligned.frac = reads$ref.aligned.frac[readsc$ix]
     readsc$AS.og[is.na(readsc$AS.og)] = 0
     readsc$qname = reads$qname[readsc$ix]
@@ -472,10 +474,10 @@ contig.support = function(reads,
 
         ## nonzero width of chunks with better alignment scores relative to REF
         ## should this also be by read? (e.g. qname, R1)
-        alchunks[, AS.better := sum(width[AS>AS.og]), by = .(qname)]
+        alchunks[, AS.better := sum(width[AS>AS.og]), by = .(qname, R1)]
         ## keep qname if a single read is truncated
-        alchunks[, AS.worse := sum(width[AS<AS.og]), by = .(qname)] 
-        alchunks[, AS.equal := sum(width[AS==AS.og]), by = .(qname)]
+        alchunks[, AS.worse := sum(width[AS<AS.og]), by = .(qname, R1)] 
+        alchunks[, AS.equal := sum(width[AS==AS.og]) , by = .(qname, R1)]
         alchunks[, nsplit := .N, by = .(qname, R1)]
 
         keepq = alchunks[concordant.sign & concordant.R1R2 & concordant.start &
@@ -483,13 +485,16 @@ contig.support = function(reads,
                          aligned.frac >= ref.aligned.frac &
                          nsplit  == 1 & ## no split reads
                          ((contig.isize - ref.isize < isize.diff) |
-                          (is.infinite(ref.isize) & !is.infinite(contig.isize)) |
-                          (is.na(ref.isize) & !is.infinite(contig.isize))) & 
-                         (AS.better>0 | (((ref.isize > 1e3 & ref.isize > contig.isize) | is.infinite(ref.isize) | is.na(ref.isize)) & (!is.infinite(contig.isize) & !is.na(contig.isize)))) & 
+                          (is.infinite(ref.isize) & (!is.infinite(contig.isize)) |
+                          (is.na(ref.isize) & !is.infinite(contig.isize)))) & 
+                         (AS.better>0 |
+                          (((ref.isize > 1e3 & ref.isize > contig.isize) |
+                            is.infinite(ref.isize) |
+                            (is.na(ref.isize)) & (!is.infinite(contig.isize) & !is.na(contig.isize))))) & 
                          AS.worse == 0, ]
 
         ## keep read-specific information...
-        keepq = keepq[, .(qname, contig, contig.id = as.character(contig), contig.isize, contig.strand, bases, contig.sign, AS.better, AS.worse, AS.equal)] %>% unique(by = 'qname')
+        keepq = keepq[, .(qname, R1, contig, contig.id = as.character(contig), contig.isize, contig.strand, bases, contig.sign, AS.better, AS.worse, AS.equal)] %>% unique(by = c('qname', "R1"))
         ## keepq = keepq[, .(qname, R1, contig, contig.isize, contig.strand, bases,
         ##                   contig.sign, AS.better, AS.worse, AS.equal)] ## %>% unique(by = c('qname', 'R1'))
     }
@@ -536,8 +541,8 @@ contig.support = function(reads,
     }
 
     ## R1/R2-speicific information is lost here
-    readsc = merge(readsc, keepq, by = 'qname') %>% dt2gr
-    ## readsc = merge(readsc, keepq, by = c('qname', 'R1')) %>% dt2gr
+    ## readsc = merge(readsc, keepq, by = 'qname') %>% dt2gr
+    readsc = merge(readsc, keepq, by = c('qname', 'R1')) %>% dt2gr
     
     if (verbose)
         message('Lifting reads through contig back to reference')
