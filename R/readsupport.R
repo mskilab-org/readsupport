@@ -534,6 +534,7 @@ contig.support = function(reads,
         ## apply filters ie nchunks>1 if chimeric, all alignments have to be of one sign
         ## if not paired then AS < AS.og else isize<isize.og
         keepq = rstats[nchunks>chimeric & (pos == 0 | neg  == 0) & aligned.frac > min.aligned.frac & !worse & (better | !strict | (paired & isize.contig < isize.og - isize.diff)) & !qsplit & num.contigs == 1, ]
+        
         if (nrow(keepq)==0)
             return(reads[c()])
 
