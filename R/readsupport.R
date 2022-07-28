@@ -392,20 +392,21 @@ contig.support = function(reads,
 
     readsc$seqnames.og = seqnames(reads)[readsc$ix] %>% as.character
     readsc$strand.og = strand(reads)[readsc$ix] %>% as.character
-    readsc$start.og = start(reads)[readsc$ix]
-    readsc$end.og = end(reads)[readsc$ix]
+    readsc$start.og = GenomicRanges::start(reads)[readsc$ix]
+    readsc$end.og = GenomicRanges::end(reads)[readsc$ix]
     ## readsc$ref.isize = reads$isize[readsc$ix]
-    readsc[, both := any(R1) & (!any(R1)), by = qname]
+    readsc$qname = reads$qname[readsc$ix]
+    readsc[, both := any(R1, na.rm = TRUE) & any(!R1, na.rm = TRUE), by = qname]
     readsc$ref.isize = gr2dt(readsc)[, ref.isize := ifelse(
-                                           both &
                                            all(seqnames.og == seqnames.og[1]) &
                                            all(strand.og == strand.og[1]),
                                            as.numeric(diff(range(c(start.og, end.og)))), Inf),
                                      by = qname]$ref.isize %>% abs
+    readsc[(!both), ref.isize := NA]
     
     readsc$ref.aligned.frac = reads$ref.aligned.frac[readsc$ix]
     readsc$AS.og[is.na(readsc$AS.og)] = 0
-    readsc$qname = reads$qname[readsc$ix]
+    
 
     ## track sample (comment out later)
     ## tst = readsc[, .(aligned.frac, AS, AS.og, ref.aligned.frac, qname)][, sample := rdt$sample[match(qname, rdt$qname)]]
@@ -480,16 +481,21 @@ contig.support = function(reads,
         alchunks[, AS.equal := sum(width[AS==AS.og]) , by = .(qname, R1)]
         alchunks[, nsplit := .N, by = .(qname, R1)]
 
+        ## browser()
+        ## alchunks[, table(concordant.sign & concordant.R1R2 & concordant.start)]
+        ## alchunks[, table(bases > min.bases & aligned.frac > min.aligned.frac & (aligned.frac > ref.aligned.frac | is.na(ref.aligned.frac)) & nsplit == 1)]
+        ## alchunks[, table(nsplit == 1)]
+
         keepq = alchunks[concordant.sign & concordant.R1R2 & concordant.start &
                          bases > min.bases & aligned.frac > min.aligned.frac &
-                         aligned.frac >= ref.aligned.frac &
+                         (aligned.frac >= ref.aligned.frac | is.na(ref.aligned.frac)) &
                          nsplit  == 1 & ## no split reads
                          ((contig.isize - ref.isize < isize.diff) |
                           (is.infinite(ref.isize) & (!is.infinite(contig.isize)) |
                           (is.na(ref.isize) & !is.infinite(contig.isize)))) & 
                          (AS.better>0 |
                           (((ref.isize > 1e3 & ref.isize > contig.isize) |
-                            is.infinite(ref.isize) |
+                            (is.infinite(ref.isize) & !is.infinite(contig.isize)) |
                             (is.na(ref.isize)) & (!is.infinite(contig.isize) & !is.na(contig.isize))))) & 
                          AS.worse == 0, ]
 
