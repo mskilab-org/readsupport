@@ -157,21 +157,21 @@ junction.support = function(reads,
   if (verbose)
     message('Running contig support')
 
-  reads = contig.support(reads, contig, ref = bwa, cg.contig = cg.contig, ...)
+  reads2 = contig.support(reads, contig, ref = bwa, cg.contig = cg.contig, ...)
   ##  reads = contig.support(reads, contig, ref = contigref, cg.contig = cg.contig, ...)
-  reads$junction.id = as.integer(as.character(reads$contig.id))
+  reads2$junction.id = as.integer(as.character(reads2$contig.id))
 
   if (both)
   {
-    if (length(reads))
-      reads$source = 'realignment'
-    
-    reads2 = junction.support(reads, junctions, bwa = bwa, ref = ref, pad = pad, realign = FALSE, both = FALSE, pad.ref = pad.ref, walks = walks, verbose = verbose, ...)
-
     if (length(reads2))
-      reads2$source = 'original_alignment'
+      reads2$source = 'realignment'
+    
+    reads3 = junction.support(reads, junctions, bwa = bwa, ref = ref, pad = pad, realign = FALSE, both = FALSE, pad.ref = pad.ref, walks = walks, verbose = verbose, ...)
 
-    reads = grbind(reads, reads2)
+    if (length(reads3))
+      reads3$source = 'original_alignment'
+
+    reads = grbind(reads2, reads3)
   }
   return(reads)  
 }
