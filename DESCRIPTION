@@ -7,12 +7,12 @@ Authors@R: c(
     "mimielinski@nygenome.org"))
 Description: The readsupport enables the evaluation of read support for junctions and rearranged contigs of arbitrary complexity and is useful forvetting, genotyping, and co-calling structural variants.
 Remotes: 
-  github::mskilab/bamUtils,
-  github::mskilab/gUtils,
-  github::mskilab/gChain,
-  github::mskilab/gGnome,
-  github::mskilab/gTrack,
-  github::mskilab/RSeqLib,
+  github::mskilab-org/bamUtils,
+  github::mskilab-org/gUtils,
+  github::mskilab-org/gChain,
+  github::mskilab-org/gGnome,
+  github::mskilab-org/gTrack,
+  github::mskilab-org/RSeqLib,
   bioc::3.10/GenomicRanges,
   bioc::3.10/rtracklayer,
   bioc::3.10/Rsamtools,
@@ -36,7 +36,7 @@ Imports:
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.1.2
+RoxygenNote: 7.3.1
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

@@ -53,6 +53,15 @@ junction.support = function(reads,
   if (!inherits(reads, 'GRanges') || is.null(reads$qname) || is.null(reads$cigar) || is.null(reads$seq) || is.null(reads$flag))
     stop('read input must be GRanges with fields $qname, $cigar, $seq, $flag and optionally $AS')
 
+  is_junction = inherits(junctions, "Junction")
+  is_grl = inherits(junctions, "GRangesList")
+
+  if (!is_junction && is_grl) {
+    junctions = gGnome::jJ(rafile = junctions)
+  } else if (!is_junction && !is_grl) {
+    stop("Object must be gGnome::Junction or GenomicRanges::GRangesList object")
+  }
+
   if (bx)
     pad = max(pad, 1e5)
 
