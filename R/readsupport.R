@@ -106,17 +106,16 @@ junction.support = function(reads,
     if (!nrow(ov))
       return(reads[c()])
     
-    sl = seqlengths(reads)
-    browser()
+    ## sl = seqlengths(reads)
     gr_x = dt2gr(
-      ov[, .(seqnames = seqnames.x, start = start.x, end =end.x, strand = strand.x)], seqlengths = sl
+      ov[, .(seqnames = seqnames.x, start = start.x, end =end.x, strand = strand.x)]
     )
     gr_y = dt2gr(
-      ov[, .(seqnames = seqnames.y, start = start.y, end = end.y, strand = strand.y)],
-      seqlengths = sl
+      ov[, .(seqnames = seqnames.y, start = start.y, end = end.y, strand = strand.y)]
     )
-    gr_x = gUtils::gr.fix(gr_x, gr_x)
-    gr_y = gUtils::gr.fix(gr_y, gr_y)
+    sl = khtools::gr.fixseq(gr_x, gr_y)
+    gr_x = gUtils::gr.fix(gr_x, sl)
+    gr_y = gUtils::gr.fix(gr_y, sl)
     grl = gUtils::grl.pivot(
       GRangesList(gr_x,gr_y)
     )
