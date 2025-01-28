@@ -13,9 +13,9 @@ Remotes:
   github::mskilab-org/gGnome,
   github::mskilab-org/gTrack,
   github::mskilab-org/RSeqLib,
-  bioc::3.10/GenomicRanges,
-  bioc::3.10/rtracklayer,
-  bioc::3.10/Rsamtools,
+  bioc::GenomicRanges,
+  bioc::rtracklayer,
+  bioc::Rsamtools,
 Depends:
     R (>= 3.6.0),
     data.table (>= 1.11),
@@ -39,4 +39,5 @@ LazyData: true
 RoxygenNote: 7.3.1
 Suggests: 
     testthat (>= 3.0.0)
+    roxygen2
 Config/testthat/edition: 3
