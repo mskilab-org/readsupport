@@ -13,6 +13,8 @@
 #' @import rtracklayer
 #' @importFrom stats start end
 
+registerS3method("merge", "data.table", data.table:::merge.data.table)
+
 #' @name junction.support
 #' @title junction.support
 #' @description
@@ -53,40 +55,43 @@ junction.support = function(reads,
   if (!inherits(reads, 'GRanges') || is.null(reads$qname) || is.null(reads$cigar) || is.null(reads$seq) || is.null(reads$flag))
     stop('read input must be GRanges with fields $qname, $cigar, $seq, $flag and optionally $AS')
 
-  is_junction = inherits(junctions, "Junction")
-  is_grl = inherits(junctions, "GRangesList")
+  if (!is.null(junctions) && is.null(walks)) {
+    
+    is_junction = inherits(junctions, "Junction")
+    is_grl = inherits(junctions, "GRangesList")
 
-  if (!is_junction && is_grl) {
-    junctions = gGnome::jJ(rafile = junctions)
-  } else if (!is_junction && !is_grl) {
-    stop("Object must be gGnome::Junction or GenomicRanges::GRangesList object")
-  }
+    if (is_junction) {
+      grl = junctions$grl
+    } else if (!is_junction && is_grl) {
+      grl = junctions
+    } else {
+      stop("Object must be gGnome::Junction or GenomicRanges::GRangesList object")
+    }
 
-  if (bx)
-    pad = max(pad, 1e5)
+    grl = gUtils::gr.fix(grl, reads)
+    reads = gUtils::gr.fix(reads, grl)
 
-  if (!is.null(junctions))
-    walks = gGnome::jJ(junctions$grl)$gw(pad = pad)
+    walks = gGnome::jJ(grl)$gw(pad = pad)
+  }  
 
   if (is.null(walks))
     stop('Either walks or junctions must be provided')
 
-  if (bx)
-  {
+  if (bx) {
+    pad = max(pad, 1e5)
     if (is.null(reads$BX))
       stop('reads must have BX tag, may need to read.bam with tag option to extract it')
 
     if (!length(reads))
       return(reads)
 
-    sc = score.walks(walks$grl, reads = reads, verbose = FALSE, raw = TRUE)$sc
+    sc = readsupport::score.walks(walks$grl, reads = reads, verbose = FALSE, raw = TRUE)$sc
     res = as.data.table(melt(as.matrix(sc)))[value>0, .(BX = Var1, walk = Var2)]
     reads = gr2dt(reads) %>% merge(res, by = 'BX') %>% dt2gr
     return(reads)
   }
 
-  if (!realign)
-  {
+  if (!realign) {
     if (is.null(junctions))
       junctions = walks$edges$junctions
 
@@ -102,11 +107,19 @@ junction.support = function(reads,
       return(reads[c()])
     
     sl = seqlengths(reads)
-    grl = grl.pivot(
-      GRangesList(dt2gr(ov[, .(seqnames = seqnames.x, start = start.x, end =end.x, strand = strand.x)],
-                        seqlengths = sl),
-                  dt2gr(ov[, .(seqnames = seqnames.y, start = start.y, end = end.y, strand = strand.y)],
-                        seqlengths = sl)))
+    browser()
+    gr_x = dt2gr(
+      ov[, .(seqnames = seqnames.x, start = start.x, end =end.x, strand = strand.x)], seqlengths = sl
+    )
+    gr_y = dt2gr(
+      ov[, .(seqnames = seqnames.y, start = start.y, end = end.y, strand = strand.y)],
+      seqlengths = sl
+    )
+    gr_x = gUtils::gr.fix(gr_x, gr_x)
+    gr_y = gUtils::gr.fix(gr_y, gr_y)
+    grl = gUtils::grl.pivot(
+      GRangesList(gr_x,gr_y)
+    )
     values(grl)$qname = ov$qname
     ## make junctions out of reads and cross with "real" junctions
     jn = gGnome::merge(jJ(grl), junctions, cartesian = TRUE, pad = pad)
@@ -580,4 +593,333 @@ contig.support = function(reads,
         message('Done')
 
     return(out)
+}
+
+
+#' @name score.walks
+#' @title score.walks
+#' @description
+#'
+#' Scores GRangesList of walks against GRanges of 10X reads with $BX tag.
+#'
+#' @param wks GRangesList of walks
+#' @param bam bam file
+#' @param reads GRanges of reads with BX tag
+#' @param win  genomic window in which to score (default is just reduce(unlist(wks))))
+#' @param wins tiles to chop up genome further (beyond walk segments)
+#' @param raw  returns raw barcode by walk matrix of barcode scores
+#' @param use.discordant logical flag whether to process discordant
+#'
+#' @import gChain
+#' @return scores of walks or (if raw == tRUE) raw barcode to walk maps
+#' @export
+#' @author Marcin Imielinski
+score.walks = function(wks, bam = NULL, reads = NULL, win = NULL, wins = NULL, use.discordant = FALSE, rthresh= 4, thresh = 1e5, pad = 1e4, raw = FALSE, allpaths = TRUE, verbose = TRUE)
+{
+    shift = data.table::shift
+    rowSums = Matrix::rowSums
+    colSums = Matrix::colSums
+    if (is.null(wins))
+    {
+
+        tmp = unique(disjoin(gr.stripstrand(unlist(wks))))
+        wins = sort(disjoin(c(gr.start(tmp, pad), gr.end(tmp, pad))))
+      strand(wins) = '+'
+    }
+
+    ## add 1 unit of "padding" to any cyclic walks to adequately measure
+    cyc.ix = values(wks)$is.cyc
+
+    if (any(cyc.ix))
+      wks[cyc.ix] = do.call(GRangesList, lapply(which(cyc.ix), function(x) c(wks[[x]], wks[[x]])))
+
+
+    THRESH = thresh
+
+    if (!is.null(win))
+      wins = wins[gr.in(wins, win)]
+
+    if (verbose)
+      message('Total territory to analyze is ', round(sum(as.numeric(width(wins)))/1e6,2), 'MB')
+
+    if (sum(as.numeric(width(wins)))/1e6==0)
+      stop('No walk areas intersect with provided win')
+
+    reads.dt = NULL;
+    if (!is.null(bam))
+    {
+      if (verbose)
+        message('Pulling out reads')
+
+      reads = dt2gr(read.bam(bam, streduce(wins), tag = 'BX', as.data.table = TRUE))
+    }
+
+    if (!inherits(reads, 'GRanges'))
+      reads = dt2gr(reads)
+
+
+    if (verbose)
+      message("Computing insert size distro for ", length(reads), " reads")
+
+    reads = reads[!is.na(reads$BX), ]
+    reads.dt = as.data.table(reads)
+
+    ## rthresh is reads per barcode filter
+    ## i.e. remove all barcodes with fewer than rthresh reads per barcode
+    if (!is.na(rthresh))    {
+      keep.bx = reads.dt[, length(start), keyby = "BX"][V1>=rthresh, BX]
+      reads.dt = reads.dt[BX %in% keep.bx, ]
+    }
+    bxlev = unique(reads$BX)
+
+    zthresh = 3
+    
+    reads.dt[, sn:= as.integer(seqnames)]
+    reads.dt[, str := strand == '+']
+    reads.dt[, R1 := bamflag(flag)[, "isFirstMateRead"]==1]
+
+    if (use.discordant | TRUE)
+    {
+      ## nullify isize for discordant pairs
+      if (verbose)
+        message("Identifying discordant pairs")
+
+
+    setkey(reads.dt, "qname")
+    reads.dt[, R1 := bamflag(flag)[, "isFirstMateRead"]==1]
+    reads.dt[, both := any(R1) & any(!R1), by = qname]
+    reads.dt[both == TRUE, ":="(sn.diff = any(diff(sn)!=0),
+                                first.strand.pos = str[1],
+                                other.strand.pos = any(str[R1!=R1[1]])
+                                ), by = qname]
+
+      reads.dt[first.strand.pos & !other.strand.pos & !sn.diff, insert.size := max(end[R1!=R1[1]])-start[1], by = qname]
+
+                                        #reads.dt[, insert.sizez := scale(insert.size)]
+      ithresh.high = quantile(reads.dt$insert.size, 0.99, na.rm = TRUE)
+      ithresh.low = quantile(reads.dt$insert.size, 0.80, na.rm = TRUE)
+      reads.dt[, count := length(start), by = qname]
+      reads.dt[both == TRUE, discordant := insert.size > ithresh.high]
+      init.disc = reads.dt[!duplicated(qname), sum(discordant, na.rm = TRUE)]
+      
+                                        #      ithresh.high = reads.dt[insert.sizez>zthresh, min(insert.size)]
+
+
+      ## filter "short dup" read pairs from  discordants (- to the left of + read ...)
+      ## which seems to be artifact mode in 10X data
+      ## (i.e. no longer call them discordant)
+      dthresh = 1e4
+      reads.dt[discordant == TRUE, ddist := abs(end-mpos)]
+      reads.dt[discordant == TRUE & ddist<dthresh & sn.diff == 0 & !first.strand.pos & other.strand.pos, discordant := NA]
+
+      if (verbose)
+      {
+        final.disc = reads.dt[!duplicated(qname), sum(discordant, na.rm = TRUE)]
+        message('Found ', final.disc, ' discordant pairs after removing ', init.disc - final.disc, ' small dup-like pairs')
+      }
+    }
+  if (verbose)
+    message("Identifying barcode strobe width")
+
+    setkeyv(reads.dt, c("seqnames", "start"))
+    reads.dt[which(!discordant & R1 == TRUE), bx.diff := c((start-shift(end))[-1], NA), by = .(seqnames, BX)]
+    reads.dt[which(!discordant & R1 == FALSE), bx.diff := c((start-shift(end))[-1], NA), by = .(seqnames, BX)]
+    reads.dt[, bx.diffz := scale(log(pmax(0, bx.diff)+1))]
+    bzthresh = 1.5
+    bthresh = reads.dt[bx.diffz>bzthresh, min(bx.diff)]
+    bmean = reads.dt[, mean(bx.diff, na.rm = TRUE)]
+
+    ## concordant and discordant read pairs
+    readsc = dt2gr(reads.dt)
+
+    ## discordant read pairs --> strand flip secnod read in pair
+    readsd = dt2gr(reads.dt[which(discordant), ][R1==FALSE, strand := c('+'='-', '-'='+')[strand]])
+
+    if (verbose)
+      message("Collapsing concordant linked reads by inferred strobe width ", bthresh)
+    ## collapse / reduce concordant read pairs
+
+#### ALT approach for read cloud generation given thresh
+
+    readsc = reads2clouds(readsc, thresh = bthresh)
+
+    readsc$BX = factor(readsc$BX, bxlev)
+    readsd$BX = factor(readsd$BX, bxlev)
+
+    wov = grl.unlist(wks)[, 'grl.ix'] %*% wins[, c()]
+
+    ## matrix of base pair width overlap between walks and wins
+    wovmat = sparseMatrix(as.integer(wov$grl.ix), wov$subject.id, x = as.numeric(width(wov)), dims = c(length(wks), length(wins)))
+
+    if (length(reads)==0)
+      stop("No reads with non NA BX provided, please check input")
+
+    ## for discordant pairs ...
+    ## we want to directly assess intersection with walks
+    ## in a strand specific way
+    wksu = grl.unlist(wks) ## these are unlisted
+    wksur = gr.flipstrand(wksu) ## these are strand flipped unlisted
+
+    qmap = as.data.table(readsd)[, .(qname, BX)][, BX[1], keyby = qname][, structure(V1, names = as.character(qname))]
+    qlev = names(qmap)
+
+    if (verbose)
+      message("Lifting discordant reads onto walks")
+
+    ## lift read onto walk coordinates using gChain
+    wk.nm = names(wks)
+    names(wks) = 1:length(wks)
+    wks.chain = gChain::spChain(wks)
+
+    ## now we want to ask what are the read pairs that now become concordant
+    ## on each lifted walk??
+    ## then score per BX and walk, how many discordant pairs are made concordant post-lift
+    ## and finally note which barcodes have the maximum number of their discordant pairs
+    ## lifted onto the walk
+    readsdl = gChain::lift(wks.chain, readsd)
+    readsdl.dt = as.data.table(readsdl)[order(seqnames, start), ]
+
+    ## use similar criteria to above to identify discordant / concordant reads in "lifted coordinates"
+    readsdl.dt = readsdl.dt[, both := any(R1) & any(!R1), by = .(seqnames, qname)][both == TRUE, ]
+    readsdl.dt[both == TRUE, ":="(
+                               first.strand.pos = str[1],
+                               other.strand.pos = any(str[R1!=R1[1]])
+                             ), by = qname]
+    readsdl.dt[first.strand.pos & !other.strand.pos, insert.size := end[R1!=R1[1]][1]-start[1], by = qname]
+    readsdl.dt[, insert.size := end[R1!=R1[1]][1]-start[1], by = qname]
+    readsdl.dt[, concordant := insert.size<ithresh.low]
+    readsdl.dt = readsdl.dt[concordant == TRUE, ][R1 == TRUE, ][, dup := duplicated(query.id), by = .(BX, seqnames)]
+    readsdl.dt = readsdl.dt[dup==FALSE, ]
+    bxstatsd = readsdl.dt[ , .(score = length(qname)), by = .(BX, seqnames)]
+    bxstatsd[, max.score := max(score), by = .(BX)]
+    bxstatsd = bxstatsd[score == max.score, ] ## only keep the max scoring BX, seqnames pairs
+
+    ## we want to use these as votes for walk support, but then any other non matching discordant pairs as anti-matches
+    ## first building a mat rix of qnames x walks
+    rovd.mat = sparseMatrix(as.integer(factor(bxstatsd$BX, bxlev)), as.numeric(as.character(bxstatsd$seqnames)), x = bxstatsd$score,
+                            dims = c(length(bxlev), length(wks)), dimnames = list(bxlev, 1:length(wks)))
+
+    if (verbose)
+      message("Lifting concordant linked read footprints onto walks")
+
+    rovcl = gChain::lift(wks.chain, readsc)
+    rovclb = gChain::lift(gChain::t(wks.chain),  rovcl)
+    values(rovclb)$walk = as.integer(seqnames(rovcl)[rovclb$query.id]) ## without as.integer(), gr.findoverlaps fails below
+    values(rovclb)$bx.walk = paste(values(rovclb)$BX, values(rovclb)$walk)
+
+    ##   tmp = rep(readsc, length(wks))
+    ##   tmp$walk = rep(1:length(wks), each = length(readsc))
+    ##   leftover.ix = setdiff(1:length(tmp), gr.findoverlaps(tmp, rovclb, by = c("BX", "walk"))$query.id)
+    ##   leftovers = tmp[leftover.ix]
+
+    ##   ## count "leftover" clouds per BX per walk
+    ## leftovers
+
+    rovclbr = grl.reduce(split(rovclb, values(rovclb)$bx.walk))
+    bxwid.lift = as.data.table(matrix(unlist(strsplit(names(rovclbr), ' ')), ncol= 2, byrow = TRUE))
+    setnames(bxwid.lift, c('BX', 'seqnames'))
+    bxwid.lift[, wid.lifted := grl.eval(rovclbr, sum(as.numeric(width)))]
+
+    if (verbose)
+      message("Analyzing concordant walk footprints on walks")
+
+    ## for every barcode we want to ask how much of its width
+    ## is "missing" post lift to that walk?  that's going to drive a negative score
+    ## with regard to its match to a given walk
+    bxwid = as.data.table(readsc)[, .(wid = sum(as.numeric(width))), keyby = BX]
+    rsc = split(readsc, readsc$BX)
+    bxwid.max = data.table(BX = names(rsc), width.max.og = grl.eval(rsc, max(width)))
+    setkey(bxwid.max, BX)
+
+    bxwid.lift = as.data.table(rovcl)[, .(wid.lifted = sum(width)), keyby = .(BX, seqnames)] 
+### wid.left == wid not lifted 
+    bxwid.lift[bxwid, wid.left := wid-wid.lifted, on = 'BX']
+
+    ## neg.mat = negative overlap matrix from lift
+    neg.mat = sparseMatrix(as.integer(factor(bxwid.lift$BX, bxlev)), as.numeric(as.character(bxwid.lift$seqnames)), x = bxwid.lift$wid.left, dims = c(length(bxlev), length(wks)), dimnames = list(bxlev, 1:length(wks)))
+
+    ## reduce the footprint of each BX on each walk + bthresh pad
+    ## rovcl.fp = as.data.table(grl.reduce(split(rovcl + bthresh, rovcl$BX)))[, BX := group_name]
+    ##  rovcl.fp = as.data.table(reads2clouds(rovcl, bthresh))[width>bthresh ,]
+    rovcl.mfp = as.data.table(reads2clouds(rovcl, bthresh))[, .(width.max.lifted = max(width)), by = .(seqnames, BX)]
+    
+#    setkeyv(rovcl.fp, c("seqnames", "BX"))
+#    rovcl.fp[, gaps := start-shift(end),  by = .(seqnames, BX)]
+#    rovcl.fp[is.na(gaps), gaps := 0]
+#    rovcl.fp[, pgap := dexp(gaps, 1/bmean, log = TRUE)]
+
+    ## 
+    bxstats = (bxwid.lift %>% merge(rovcl.mfp, by = c('seqnames', 'BX')) %>% merge(bxwid.max, by = 'BX'))
+
+    ## keep only those that have better width.max.lifted than width.max.og
+    left.thresh = 0.01    
+    bxstats = bxstats[wid.left<left.thresh*width.max.lifted & width.max.lifted>width.max.og, ]
+
+    ## log.sum.exp =  function(x){
+    ##   offset = max(x)
+    ##   log(sum(exp(x - offset))) + offset
+    ## }
+   
+    ## ## calculate widths of (largest vs next largest) footprints per walk
+    ## bxstats = rovcl.fp[, .(jpgap = sum(pgap)), keyby = .(BX, seqnames)]
+    ## bxstats[, lse := log.sum.exp(jpgap), by = BX]
+    ## bxstats[, pw := exp(jpgap-lse), by = BX]
+     
+    
+    if (verbose)
+      message("Creating barcode x walk matrices")
+
+    ## rovc.mat = convert bxstats to barcode x walk matrix
+    ##  rovc.mat = sparseMatrix(as.integer(factor(bxstats$BX, bxlev)), as.numeric(as.character(bxstats$seqnames)), x = bxstats$wid.rel, dims = c(length(bxlev), length(wks)), dimnames = list(bxlev, 1:length(wks)))
+
+    rovc.mat = sparseMatrix(as.integer(factor(bxstats$BX, bxlev)), as.numeric(as.character(bxstats$seqnames)), x = 1, dims = c(length(bxlev), length(wks)), dimnames = list(bxlev, 1:length(wks)))
+
+    ## combine everything via logistic function into probability like score
+    .logistic = function(x, x0) 1/(1+exp(-x))
+
+    ## rescale all width based matrices by median bxwidth
+                                        #  mbw = median(bxwid$wid)
+                                        # rovc.mat = sweep(rovc.mat, 1, mbw, "/")
+                                        #  neg.mat = sweep(neg.mat, 1, mbw, "/")
+
+    ## instead just by strobe width for the neg.mat (overlap
+    neg.mat = sweep(neg.mat, 1, bthresh/4, "/")
+
+    if (verbose)
+      message("Converting scores to quasi probabilities")
+
+    ## transform everything by logistic and sweep rowSums
+    ##neg.mat = sweep(neg.mat, 1, apply(neg.mat, 1, min), '-')
+
+    provd = 2*(.logistic(rovd.mat)-0.5)
+    ## provc = 2*(.logistic(rovc.mat)-0.5)
+    provc = rovc.mat
+                                        #  provc = t(apply(as.matrix(provc), 1, function(x) x == max(x))) + 0
+    pneg = 2*(.logistic(neg.mat)-0.5)
+
+    if (any( ix <- rowSums(provc)==0)) ## reset blank rows to flat uniform dist
+      provc[ix, ] = 1/ncol(provc)
+
+    if (any( ix <- rowSums(provd)==0)) ## reset blank rows to flat uniform dist
+      provd[ix, ] = 1/ncol(provd)
+
+    if (any(ix <- rowSums(pneg)==0)) ## reset blank rows to flat uniform dist
+      pneg[ix, ] = 1/ncol(pneg)
+
+##    sc = provd*provc*(1-pneg)
+##    sc = sweep(sc, 1, rowSums(sc), '/')
+    sc = rovc.mat
+
+    ## ## NA all rows that are equivalently distributed across all walks
+    ## sc[apply(sc, 1, function(x) all(diff(x)==0)), ] = NA
+
+    ## if (!is.null(wk.nm))
+    ##   colnames(sc) = wk.nm
+
+    if (raw)
+      return(list(sc = sc, rsc = rsc, provd = provd, provc = provc, pneg = pneg))
+
+    scr = colSums(sc)
+
+    return(scr)
 }

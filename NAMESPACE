@@ -2,6 +2,7 @@
 
 export(contig.support)
 export(junction.support)
+export(score.walks)
 import(Biostrings)
 import(GenomicRanges)
 import(Matrix)
