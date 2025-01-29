@@ -68,9 +68,6 @@ junction.support = function(reads,
       stop("Object must be gGnome::Junction or GenomicRanges::GRangesList object")
     }
 
-    grl = gUtils::gr.fix(grl, reads)
-    reads = gUtils::gr.fix(reads, grl)
-
     walks = gGnome::jJ(grl)$gw(pad = pad)
   }  
 
@@ -106,16 +103,17 @@ junction.support = function(reads,
     if (!nrow(ov))
       return(reads[c()])
     
-    ## sl = seqlengths(reads)
+    sl = seqlengths(reads)
     gr_x = dt2gr(
-      ov[, .(seqnames = seqnames.x, start = start.x, end =end.x, strand = strand.x)]
+        ov[, .(seqnames = seqnames.x, start = start.x, end = end.x, strand = strand.x)],
+        seqlengths = sl
     )
     gr_y = dt2gr(
-      ov[, .(seqnames = seqnames.y, start = start.y, end = end.y, strand = strand.y)]
+        ov[, .(seqnames = seqnames.y, start = start.y, end = end.y, strand = strand.y)],
+        seqlengths = sl
     )
-    sl = khtools::gr.fixseq(gr_x, gr_y)
-    gr_x = gUtils::gr.fix(gr_x, sl)
-    gr_y = gUtils::gr.fix(gr_y, sl)
+    gr_x = gUtils::gr.fix(gr_x, gr_y)
+    gr_y = gUtils::gr.fix(gr_y, gr_x)
     grl = gUtils::grl.pivot(
       GRangesList(gr_x,gr_y)
     )
@@ -178,7 +176,7 @@ junction.support = function(reads,
   if (verbose)
     message('Running contig support')
 
-  reads2 = contig.support(reads, contig, ref = bwa, cg.contig = cg.contig, ...)
+  reads2 = readsupport::contig.support(reads, contig, ref = bwa, cg.contig = cg.contig, ...)
   ##  reads = contig.support(reads, contig, ref = contigref, cg.contig = cg.contig, ...)
   reads2$junction.id = as.integer(as.character(reads2$contig.id))
 
@@ -192,7 +190,7 @@ junction.support = function(reads,
     if (length(reads3))
       reads3$source = 'original_alignment'
 
-    reads = grbind(reads2, reads3)
+    reads = gUtils::grbind(reads2, reads3)
   }
   return(reads)  
 }
